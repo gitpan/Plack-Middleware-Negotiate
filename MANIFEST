@@ -5,6 +5,6 @@ Makefile.PL
 README
 lib/Plack/Middleware/Negotiate.pm
 t/00_compile.t
-t/10_negotiate.t
+t/10_constructor.t
 t/20_explicit.t
 t/30_headers.t

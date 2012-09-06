@@ -1,9 +1,9 @@
 
 
 This archive contains the distribution Plack-Middleware-Negotiate,
-version 0.01:
+version 0.02:
 
-  Apply HTTP content negotiation as PSGI Middleware
+  Apply HTTP content negotiation as Plack middleware
 
 This software is copyright (c) 2012 by Jakob Voß.
 
