@@ -1,6 +1,6 @@
 package Plack::Middleware::Negotiate;
 {
-  $Plack::Middleware::Negotiate::VERSION = '0.02';
+  $Plack::Middleware::Negotiate::VERSION = '0.03';
 }
 #ABSTRACT: Apply HTTP content negotiation as Plack middleware
 use strict;
@@ -15,55 +15,58 @@ use Carp qw(croak);
 
 use Log::Contextual::WarnLogger;
 use Log::Contextual qw(:log), 
-	-default_logger => Log::Contextual::WarnLogger->new({ 
-		env_prefix => 'PLACK_MIDDLEWARE_NEGOTIATE' });
+    -default_logger => Log::Contextual::WarnLogger->new({ 
+        env_prefix => 'PLACK_MIDDLEWARE_NEGOTIATE' });
 
 sub prepare_app {
     my $self = shift;
 
-	croak __PACKAGE__ . ' requires formats'
-		unless $self->{formats} and %{$self->{formats}};
+    croak __PACKAGE__ . ' requires formats'
+        unless $self->{formats} and %{$self->{formats}};
 
     $self->{formats}->{_} //= { };
 
-	unless ($self->{formats}->{_}->{type}) {
-		foreach (grep { $_ ne '_' } keys %{$self->{formats}}) {
-			croak __PACKAGE__ . " format requires type: $_"
-				unless $self->{formats}->{$_}->{type};
-		}
-	}
+    unless ($self->{formats}->{_}->{type}) {
+        foreach (grep { $_ ne '_' } keys %{$self->{formats}}) {
+            croak __PACKAGE__ . " format requires type: $_"
+                unless $self->{formats}->{$_}->{type};
+        }
+    }
 }
 
 sub call {
     my ($self, $env) = @_;
 
-	my $orig_path = $env->{PATH_INFO};
+    my $orig_path = $env->{PATH_INFO};
 
-    $env->{'negotiate.format'} = $self->negotiate($env);
+    my $format = $self->negotiate($env);
+    $env->{'negotiate.format'} = $format;
 
-    Plack::Util::response_cb( $self->app->($env), sub {
+    my $app = $self->{formats}->{$format}->{app} // $self->app;
+
+    Plack::Util::response_cb( $app->($env), sub {
         my $res = shift;
-		$self->add_headers( $res->[1], $env->{'negotiate.format'} );
-		$env->{PATH_INFO} = $orig_path;
+        $self->add_headers( $res->[1], $env->{'negotiate.format'} );
+        $env->{PATH_INFO} = $orig_path;
         $res;
     });
 }
 
 sub add_headers {
-	my ($self, $headers, $name) = @_;
+    my ($self, $headers, $name) = @_;
 
     my $format = $self->about($name) || return;
-	my $fields = { @$headers };
+    my $fields = { @$headers };
 
-	if (!$fields->{'Content-Type'}) {
-		my $type = $format->{type};
-		$type .= "; charset=". $format->{charset}
-			if $format->{charset};
-		push @$headers, 'Content-Type' => $type;
-	}
+    if (!$fields->{'Content-Type'}) {
+        my $type = $format->{type};
+        $type .= "; charset=". $format->{charset}
+            if $format->{charset};
+        push @$headers, 'Content-Type' => $type;
+    }
 
-	push @$headers, 'Content-Language' => $format->{language}
-		if $format->{language} and !$fields->{'Content-Language'};
+    push @$headers, 'Content-Language' => $format->{language}
+        if $format->{language} and !$fields->{'Content-Language'};
 }
 
 sub negotiate {
@@ -73,29 +76,29 @@ sub negotiate {
     if (defined $self->parameter) {
         my $format = $req->param($self->parameter);
         if ( ($format // '_') ne '_' and $self->{formats}->{$format}) {
-			log_trace { "format $format chosen based on query parameter" };
-			return $format;
-		}
+            log_trace { "format $format chosen based on query parameter" };
+            return $format;
+        }
     }
 
     if ($self->extension and $req->path =~ /\.([^.]+)$/ 
             and $self->formats->{$1}) {
         my $format = $1;
         $env->{PATH_INFO} =~ s/\.$format$//
-			if $self->extension eq 'strip';
-		log_trace { "format $format chosen based on extension" };
+            if $self->extension eq 'strip';
+        log_trace { "format $format chosen based on extension" };
         return $format;
     }
 
     my $format = choose($self->variants, $req->headers);
-	log_trace { "format $format chosen based on HTTP content negotiation" };
-	return $format;
+    log_trace { "format $format chosen based on HTTP content negotiation" };
+    return $format;
 }
 
 sub about {
     my ($self, $name) = @_;
 
-	return unless defined $name and $name ne '_';
+    return unless defined $name and $name ne '_';
 
     my $default = $self->{formats}->{_};
     my $format  = $self->{formats}->{$name} || return;
@@ -139,7 +142,7 @@ Plack::Middleware::Negotiate - Apply HTTP content negotiation as Plack middlewar
 
 =head1 VERSION
 
-version 0.02
+version 0.03
 
 =head1 SYNOPSIS
 
@@ -181,6 +184,21 @@ it. Each format can be defined with C<type>, C<quality> (defaults to 1),
 C<encoding>, C<charset>, and C<language>. The special format name C<_>
 (underscore) is reserved to define default values for all formats.
 
+Formats can also be used to directly route the request to a PSGI application:
+
+    my $app = Plack::Middleware::Negotiate->new(
+        formats => {
+            json => { 
+                type => 'application/json',
+                app  => $json_app,
+            },
+            html => {
+                type => 'text/html',
+                app  => $html_app,
+            }
+        }
+    );
+
 =head2 negotiate ( $env )
 
 Chooses a format based on a PSGI request. The request is first checked for
@@ -209,6 +227,8 @@ already given.
 
 =encoding utf8
 
+=head1 METHODS
+
 =head1 LOGGING AND DEBUGGUNG
 
 Plack::Middleware::Negotiate uses C<Log::Contextual> to emit a logging message
@@ -221,6 +241,10 @@ during content negotiation on logging level <trace>. Just set:
 The Content-Encoding HTTP response header is not automatically set on a
 response and content negotiation based on size is not supported. Feel free to
 comment on whether and how this middleware should support both.
+
+=head1 SEE ALSO
+
+L<HTTP::Negotiate>, L<HTTP::Headers::ActionPack::ContentNegotiation>
 
 =head1 AUTHOR
 
