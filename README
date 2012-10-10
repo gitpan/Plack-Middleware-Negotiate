@@ -1,7 +1,7 @@
 
 
 This archive contains the distribution Plack-Middleware-Negotiate,
-version 0.04:
+version 0.05:
 
   Apply HTTP content negotiation as Plack middleware
 

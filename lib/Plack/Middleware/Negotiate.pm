@@ -1,6 +1,6 @@
 package Plack::Middleware::Negotiate;
 {
-  $Plack::Middleware::Negotiate::VERSION = '0.04';
+  $Plack::Middleware::Negotiate::VERSION = '0.05';
 }
 #ABSTRACT: Apply HTTP content negotiation as Plack middleware
 use strict;
@@ -80,10 +80,16 @@ sub negotiate {
     my $req = Plack::Request->new($env);
 
     if (defined $self->parameter) {
-        my $format = $req->param($self->parameter);
-        if ( ($format // '_') ne '_' and $self->{formats}->{$format}) {
-            log_trace { "format $format chosen based on query parameter" };
-            return $format;
+        my $param = $self->parameter;
+        if ($env->{QUERY_STRING} =~ /(^|&)$param=([^&]+)/) {
+            my $format = $2;
+            if ( ($format // '_') ne '_' and $self->{formats}->{$format}) {
+                log_trace { "format $format chosen based on query parameter" };
+                unless ( $env->{QUERY_STRING} =~ s/&$param=([^&]+)//) {
+                    $env->{QUERY_STRING} =~ s/^$param=([^&]+)&?//;
+                }
+                return $format;
+            }
         }
     }
 
@@ -148,7 +154,7 @@ Plack::Middleware::Negotiate - Apply HTTP content negotiation as Plack middlewar
 
 =head1 VERSION
 
-version 0.04
+version 0.05
 
 =head1 SYNOPSIS
 
@@ -211,10 +217,11 @@ Formats can also be used to directly route the request to a PSGI application:
 =head2 negotiate ( $env )
 
 Chooses a format based on a PSGI request. The request is first checked for
-explicit format selection via C<parameter> and C<extionsion> (if configured)
-and then passed to L<HTTP::Negotiate>. Returns the format name. May modify the
-PSGI request environment keys PATH_INFO and SCRIPT_NAME if format was selected
-by extension set to C<strip>.
+explicit format selection via C<parameter> and C<extension> (if configured) and
+then passed to L<HTTP::Negotiate>. Returns the format name. May modify the PSGI
+request environment keys PATH_INFO and SCRIPT_NAME if format was selected by
+extension set to C<strip>, and strips the C<format> query parameter from
+QUERY_STRING if C<parameter> is set to a known format.
 
 =head2 about ( $format )
 
@@ -253,7 +260,9 @@ comment on whether and how this middleware should support both.
 
 =head1 SEE ALSO
 
-L<HTTP::Negotiate>, L<HTTP::Headers::ActionPack::ContentNegotiation>
+Content negotiation in this module is based on L<HTTP::Negotiate>. See 
+L<HTTP::Headers::ActionPack::ContentNegotiation> for an alternative approach.
+This module has some overlap with L<Plack::Middleware::SetAccept>.
 
 =head1 AUTHOR
 

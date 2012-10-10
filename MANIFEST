@@ -9,3 +9,4 @@ t/10_constructor.t
 t/20_explicit.t
 t/30_headers.t
 t/40_route.t
+t/50_param.t
