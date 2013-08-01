@@ -1,11 +1,11 @@
 
 
 This archive contains the distribution Plack-Middleware-Negotiate,
-version 0.05:
+version 0.06:
 
   Apply HTTP content negotiation as Plack middleware
 
-This software is copyright (c) 2012 by Jakob Voß.
+This software is copyright (c) 2013 by Jakob Voß.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.

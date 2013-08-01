@@ -1,6 +1,6 @@
 package Plack::Middleware::Negotiate;
 {
-  $Plack::Middleware::Negotiate::VERSION = '0.05';
+  $Plack::Middleware::Negotiate::VERSION = '0.06';
 }
 #ABSTRACT: Apply HTTP content negotiation as Plack middleware
 use strict;
@@ -127,6 +127,7 @@ sub about {
 sub variants {
     my $self = shift;
     return [ 
+        sort { $a->[0] cmp $b->[0] }
         map { 
             my $format = $self->about($_);
             [ 
@@ -154,7 +155,7 @@ Plack::Middleware::Negotiate - Apply HTTP content negotiation as Plack middlewar
 
 =head1 VERSION
 
-version 0.05
+version 0.06
 
 =head1 SYNOPSIS
 
@@ -270,7 +271,7 @@ Jakob Voß <voss@gbv.de>
 
 =head1 COPYRIGHT AND LICENSE
 
-This software is copyright (c) 2012 by Jakob Voß.
+This software is copyright (c) 2013 by Jakob Voß.
 
 This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.
