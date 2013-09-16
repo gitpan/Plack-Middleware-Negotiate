@@ -11,13 +11,7 @@ use ExtUtils::MakeMaker 6.30;
 my %WriteMakefileArgs = (
   "ABSTRACT" => "Apply HTTP content negotiation as Plack middleware",
   "AUTHOR" => "Jakob Vo\303\237 <voss\@gbv.de>",
-  "BUILD_REQUIRES" => {
-    "HTTP::Request::Common" => 0,
-    "Plack::Builder" => 0,
-    "Plack::Test" => 0,
-    "Test::Exception" => 0,
-    "Test::More" => 0
-  },
+  "BUILD_REQUIRES" => {},
   "CONFIGURE_REQUIRES" => {
     "ExtUtils::MakeMaker" => "6.30"
   },
@@ -26,23 +20,30 @@ my %WriteMakefileArgs = (
   "LICENSE" => "perl",
   "NAME" => "Plack::Middleware::Negotiate",
   "PREREQ_PM" => {
-    "Carp" => 0,
-    "HTTP::Negotiate" => 0,
-    "Log::Contextual" => 0,
-    "Log::Contextual::WarnLogger" => 0,
-    "Plack::Middleware" => 0,
-    "Plack::Request" => 0,
-    "Plack::Util::Accessor" => 0,
-    "parent" => 0,
-    "strict" => 0,
-    "warnings" => 0
+    "HTTP::Negotiate" => "6.01",
+    "Log::Contextual" => "0.006",
+    "Plack" => "1.0"
   },
-  "VERSION" => "0.06",
+  "TEST_REQUIRES" => {},
+  "VERSION" => "0.07",
   "test" => {
     "TESTS" => "t/*.t"
   }
 );
 
+
+unless ( eval { ExtUtils::MakeMaker->VERSION(6.63_03) } ) {
+  my $tr = delete $WriteMakefileArgs{TEST_REQUIRES};
+  my $br = $WriteMakefileArgs{BUILD_REQUIRES};
+  for my $mod ( keys %$tr ) {
+    if ( exists $br->{$mod} ) {
+      $br->{$mod} = $tr->{$mod} if $tr->{$mod} > $br->{$mod};
+    }
+    else {
+      $br->{$mod} = $tr->{$mod};
+    }
+  }
+}
 
 unless ( eval { ExtUtils::MakeMaker->VERSION(6.56) } ) {
   my $br = delete $WriteMakefileArgs{BUILD_REQUIRES};

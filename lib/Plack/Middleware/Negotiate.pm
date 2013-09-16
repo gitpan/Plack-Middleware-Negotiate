@@ -1,10 +1,8 @@
 package Plack::Middleware::Negotiate;
-{
-  $Plack::Middleware::Negotiate::VERSION = '0.06';
-}
 #ABSTRACT: Apply HTTP content negotiation as Plack middleware
+our $VERSION = '0.07'; #VERSION
+
 use strict;
-use warnings;
 use v5.10.1;
 use parent 'Plack::Middleware';
 
@@ -13,23 +11,20 @@ use Plack::Request;
 use HTTP::Negotiate qw(choose);
 use Carp qw(croak);
 
-use Log::Contextual::WarnLogger;
-use Log::Contextual qw(:log), 
-    -default_logger => Log::Contextual::WarnLogger->new({ 
-        env_prefix => 'PLACK_MIDDLEWARE_NEGOTIATE' });
+use Log::Contextual::Easy::Default;
 
 sub prepare_app {
     my $self = shift;
 
     croak __PACKAGE__ . ' requires formats'
-        unless $self->{formats} and %{$self->{formats}};
+        unless $self->formats and %{$self->formats};
 
-    $self->{formats}->{_} //= { };
+    $self->formats->{_} //= { };
 
-    unless ($self->{formats}->{_}->{type}) {
-        foreach (grep { $_ ne '_' } keys %{$self->{formats}}) {
+    unless ($self->formats->{_}->{type}) {
+        foreach (grep { $_ ne '_' } keys %{$self->formats}) {
             croak __PACKAGE__ . " format requires type: $_"
-                unless $self->{formats}->{$_}->{type};
+                unless $self->formats->{$_}->{type};
         }
     }
 
@@ -47,7 +42,9 @@ sub call {
     $env->{'negotiate.format'} = $format;
 
     my $app;
-    $app = $self->{formats}->{$format}->{app} if $format and $self->{formats}->{$format};
+    if ( $format and $self->formats->{$format} ) {
+        $app = $self->formats->{$format}->{app};
+    }
     $app //= $self->app;
 
     Plack::Util::response_cb( $app->($env), sub {
@@ -58,7 +55,7 @@ sub call {
     });
 }
 
-sub add_headers {
+sub add_headers { # TODO: use Plack::Util or P:M:Headers
     my ($self, $headers, $name) = @_;
 
     my $format = $self->about($name) || return;
@@ -83,7 +80,7 @@ sub negotiate {
         my $param = $self->parameter;
         if ($env->{QUERY_STRING} =~ /(^|&)$param=([^&]+)/) {
             my $format = $2;
-            if ( ($format // '_') ne '_' and $self->{formats}->{$format}) {
+            if ( ($format // '_') ne '_' and $self->known($format) ) {
                 log_trace { "format $format chosen based on query parameter" };
                 unless ( $env->{QUERY_STRING} =~ s/&$param=([^&]+)//) {
                     $env->{QUERY_STRING} =~ s/^$param=([^&]+)&?//;
@@ -93,8 +90,7 @@ sub negotiate {
         }
     }
 
-    if ($self->extension and $req->path =~ /\.([^.]+)$/ 
-            and $self->formats->{$1}) {
+    if ($self->extension and $req->path =~ /\.([^.]+)$/ and $self->known($1)) {
         my $format = $1;
         $env->{PATH_INFO} =~ s/\.$format$//
             if $self->extension eq 'strip';
@@ -104,7 +100,13 @@ sub negotiate {
 
     my $format = choose($self->variants, $req->headers);
     log_trace { "format $format chosen based on HTTP content negotiation" };
+
     return $format;
+}
+
+sub known {
+    my ($self, $name) = @_;
+    return exists $self->formats->{$name};
 }
 
 sub about {
@@ -112,8 +114,8 @@ sub about {
 
     return unless defined $name and $name ne '_';
 
-    my $default = $self->{formats}->{_};
-    my $format  = $self->{formats}->{$name} || return;
+    my $default = $self->formats->{_};
+    my $format  = $self->formats->{$name} || return;
 
     return {
         quality  => $format->{quality} // $default->{quality} // 1,
@@ -139,14 +141,14 @@ sub variants {
                 $format->{language},
                 0 
         ] } 
-        grep { $_ ne '_' } keys %{$self->{formats}}
+        grep { $_ ne '_' } keys %{$self->formats}
     ];
 }
 
 1;
 
-
 __END__
+
 =pod
 
 =head1 NAME
@@ -155,7 +157,7 @@ Plack::Middleware::Negotiate - Apply HTTP content negotiation as Plack middlewar
 
 =head1 VERSION
 
-version 0.06
+version 0.07
 
 =head1 SYNOPSIS
 
@@ -189,14 +191,11 @@ no format could be negotiated.
 
 =head1 METHODS
 
-=head2 new ( formats => { ... } [ %argument ] )
+=head2 new( formats => { ... } [ %argument ] )
 
-Creates a new negotiation middleware with a given set of formats. The argument
-C<parameter> can be added to support explicit format selection with a query
-parameter. The argument C<extension> can be used to support explicit format
-selection with a virtual file extension. Use C<< format => 'strip' >> to strip
-a known format name from the request path and C<< format => 'keep' >> to keep
-it. Each format can be defined with C<type>, C<quality> (defaults to 1),
+Creates a new negotiation middleware with a given set of formats.
+
+Each format can be defined with C<type>, C<quality> (defaults to 1),
 C<encoding>, C<charset>, and C<language>. The special format name C<_>
 (underscore) is reserved to define default values for all formats.
 
@@ -215,7 +214,7 @@ Formats can also be used to directly route the request to a PSGI application:
         }
     );
 
-=head2 negotiate ( $env )
+=head2 negotiate( $env )
 
 Chooses a format based on a PSGI request. The request is first checked for
 explicit format selection via C<parameter> and C<extension> (if configured) and
@@ -224,20 +223,25 @@ request environment keys PATH_INFO and SCRIPT_NAME if format was selected by
 extension set to C<strip>, and strips the C<format> query parameter from
 QUERY_STRING if C<parameter> is set to a known format.
 
-=head2 about ( $format )
+=head2 about( $format )
 
 If the format was specified, this method returns a hash with C<quality>,
 C<type>, C<encoding>, C<charset>, and C<language>. Missing values are set to
 the default.
 
-=head2 variants ()
+=head2 known( $format )
+
+Tells whether a format name is known. By default this is the case if the format
+name exists in the list of formats.
+
+=head2 variants
 
 Returns a list of content variants to be used in L<HTTP::Negotiate>. The return
 value is an array reference of array references, each with seven elements:
 format name, source quality, type, encoding, charset, language, and size. The
 size is always zero.
 
-=head2 add_headers ( \@headers, $format )
+=head2 add_headers( \@headers, $format )
 
 Add apropriate HTTP response headers for a format unless the headers are
 already given.
@@ -245,6 +249,27 @@ already given.
 =encoding utf8
 
 =head1 METHODS
+
+=head1 CONFIGURATION
+
+=over
+
+=item formats
+
+A list of formats to choose among.
+
+=item parameter
+
+Enables explicit format selection with a query paramater, for instance
+'C<format>'.
+
+=item extension
+
+Enables explicit format selection with a virtual file extension. The value
+'C<strip>' strips a known format name from the request path. The value
+'C<keep>' keeps the format name extension after format selection.
+
+=back
 
 =head1 LOGGING AND DEBUGGUNG
 
@@ -277,4 +302,3 @@ This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.
 
 =cut
-
