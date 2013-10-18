@@ -1,6 +1,6 @@
 package Plack::Middleware::Negotiate;
 #ABSTRACT: Apply HTTP content negotiation as Plack middleware
-our $VERSION = '0.08'; #VERSION
+our $VERSION = '0.10'; #VERSION
 
 use strict;
 use v5.10.1;
@@ -80,15 +80,19 @@ sub negotiate {
 
     if (defined $self->parameter) {
         my $param = $self->parameter;
-        if ($env->{QUERY_STRING} =~ /(^|&)$param=([^&]+)/) {
-            my $format = $2;
-            if ($self->known($format)) {
-                log_trace { "format $format chosen based on query parameter" };
-                unless ( $env->{QUERY_STRING} =~ s/&$param=([^&]+)//) {
-                    $env->{QUERY_STRING} =~ s/^$param=([^&]+)&?//;
-                }
-                return $format;
-            }
+
+        my $format = $env->{QUERY_STRING} =~ /(^|&)$param=([^&]+)/ ? $2 : undef;
+
+        if (!$self->known($format)) { # no GET parameter or unknown format
+            $format = $req->body_parameters->{$param};
+        }
+
+        if ($self->known($format)) {
+            log_trace { "format $format chosen based on query parameter" };
+            unless ( $env->{QUERY_STRING} =~ s/&$param=([^&]+)//) {
+                $env->{QUERY_STRING} =~ s/^$param=([^&]+)&?//;
+            }               
+            return $format;
         }
     }
 
@@ -150,8 +154,8 @@ sub variants {
 
 1;
 
-__END__
 
+__END__
 =pod
 
 =head1 NAME
@@ -160,7 +164,7 @@ Plack::Middleware::Negotiate - Apply HTTP content negotiation as Plack middlewar
 
 =head1 VERSION
 
-version 0.08
+version 0.10
 
 =head1 SYNOPSIS
 
@@ -184,7 +188,20 @@ version 0.08
 L<Plack::Middleware::Negotiate> applies HTTP content negotiation to a L<PSGI>
 request. In addition to normal content negotiation from a list of defined
 C<formats> one may enable explicit format selection with a path C<extension> or
-query C<parameter>. 
+query C<parameter>. In summary, the following methods are tried in this order 
+to negotiate a known format:
+
+=over
+
+=item HTTP GET format parameter (if enabled with option C<parameter>)
+
+=item HTTP POST format parameter (if enabled with option C<paramater>)
+
+=item URL path extension (if enabled with option C<extension>)
+
+=item HTTP Accept Header (unless disabled with option C<explicit>)
+
+=back
 
 The PSGI environment key C<negotiate.format> is set to the chosen format name
 after negotiation.  The PSGI response is enriched with corresponding HTTP
@@ -203,10 +220,12 @@ Creates a new negotiation middleware with a given set of formats.
 
 Chooses a format based on a PSGI request. The request is first checked for
 explicit format selection via C<parameter> and C<extension> (if configured) and
-then passed to L<HTTP::Negotiate>. Returns the format name. May modify the PSGI
-request environment keys PATH_INFO and SCRIPT_NAME if format was selected by
-extension set to C<strip>, and strips the C<format> query parameter from
-QUERY_STRING if C<parameter> is set to a format.
+then passed to L<HTTP::Negotiate>. On success the method returns a format name.
+The method may modify the PSGI request environment keys PATH_INFO and
+SCRIPT_NAME if format was selected by extension set to C<strip>, and strips the
+C<format> HTTP GET query parameter from QUERY_STRING if C<parameter> is set to
+a format. If format was selected by HTTP POST body parameter, the parameter it
+is not stripped from the request.
 
 =head2 known( $format )
 
@@ -264,17 +283,17 @@ Formats can also be used to directly route the request to a PSGI application:
 =item parameter
 
 Enables explicit format selection with a query paramater, for instance
-'C<format>'.
+C<format>. Both HTTP GET and HTTP POST body parameters are supported.
 
 =item extension
 
 Enables explicit format selection with a virtual file extension. The value
-'C<strip>' strips a known format name from the request path. The value
-'C<keep>' keeps the format name extension after format selection.
+C<strip> strips a known format name from the request path. The value C<keep>
+keeps the format name extension after format selection.
 
-The middleware takes
-care for rewriting and restoring PATH_INFO if it is configured to detect and
-strip a format extension. 
+The middleware takes care for rewriting and restoring PATH_INFO if it is
+configured to detect and strip a format extension. 
+
 =item explicit
 
 Disables content negotiation based on HTTP headers.
@@ -284,7 +303,7 @@ Disables content negotiation based on HTTP headers.
 =head1 LOGGING AND DEBUGGUNG
 
 Plack::Middleware::Negotiate uses C<Log::Contextual> to emit a logging message
-during content negotiation on logging level <trace>. Just set:
+during content negotiation on logging level C<trace>. Just set:
 
     $ENV{PLACK_MIDDLEWARE_NEGOTIATE_TRACE} = 1;
 
@@ -312,3 +331,4 @@ This is free software; you can redistribute it and/or modify it under
 the same terms as the Perl 5 programming language system itself.
 
 =cut
+
